@@ -1,0 +1,27 @@
+services:
+  backend:
+    build:
+      context: ..            
+      dockerfile: dev/Dockerfile
+    image: tharhosting-backend:dev
+    ports:
+      - "8089:8900"         
+    env_file:
+      - ../.env
+    environment:
+      THARHOSTING_HOST: 0.0.0.0   
+      THARHOSTING_DATA: /etc/data
+    volumes:
+      - db-data:/etc/data
+      - /var/run/docker.sock:/var/run/docker.sock   
+    restart: unless-stopped
+
+  frontend:
+    image: nginx:alpine 
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+
+volumes:
+  db-data:
