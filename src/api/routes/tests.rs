@@ -214,3 +214,55 @@ async fn github_push_triggers_matching_apps_only() {
     assert_eq!(deployed.len(), 1, "{v}");
     assert_eq!(deployed[0]["app"], "site");
 }
+
+#[tokio::test]
+async fn health_is_open_at_root_and_under_api() {
+    // A token is configured but none is sent: health must still answer.
+    let h = harness(Some("t"), None);
+    for uri in ["/", "/health", "/api/health"] {
+        let (s, v) = call(&h, "GET", uri, None, &[]).await;
+        assert_eq!(s, StatusCode::OK, "{uri}");
+        assert_eq!(v["ok"], true, "{uri}");
+    }
+}
+
+#[tokio::test]
+async fn api_index_lists_routes_and_needs_the_token() {
+    let h = harness(Some("t"), None);
+
+    let (s, _) = call(&h, "GET", "/api", None, &[]).await;
+    assert_eq!(s, StatusCode::UNAUTHORIZED);
+
+    let (s, v) = call(&h, "GET", "/api", None, &[("authorization", "Bearer t")]).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["name"], "tharhosting");
+    let routes = v["routes"].as_array().unwrap();
+    assert!(routes.iter().any(|r| r["method"] == "POST" && r["path"] == "/api/apps"));
+}
+
+/// Guards the hand-written route list against typos and stale entries: every
+/// listed method and path must reach a real handler.
+#[tokio::test]
+async fn every_listed_route_exists() {
+    let h = harness(Some("t"), None);
+    let auth = [("authorization", "Bearer t")];
+    let (_, v) = call(&h, "GET", "/api", None, &auth).await;
+
+    for route in v["routes"].as_array().unwrap() {
+        let method = route["method"].as_str().unwrap();
+        let path = route["path"]
+            .as_str()
+            .unwrap()
+            .replace("{app}", "nope")
+            .replace("{id}", "00000000-0000-0000-0000-000000000000");
+
+        let (status, body) = call(&h, method, &path, None, &auth).await;
+        // Unknown paths give an empty 404 and wrong methods give 405. A handler
+        // that says "not found" answers with a JSON error body instead.
+        let unknown_path = status == StatusCode::NOT_FOUND && body == Value::String(String::new());
+        assert!(
+            status != StatusCode::METHOD_NOT_ALLOWED && !unknown_path,
+            "{method} {path} is listed but not routed (got {status})"
+        );
+    }
+}

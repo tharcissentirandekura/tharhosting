@@ -2,6 +2,7 @@
  * The HTTP router: every endpoint in one place. The handlers themselves live
  * in the submodules:
  *
+ * - `index`: the health check and the list of routes
  * - `apps`: app records (list, get, create, update, delete)
  * - `lifecycle`: deploy, start, stop
  * - `deployments`: deployment history and logs
@@ -10,15 +11,16 @@
 
 mod apps;
 mod deployments;
+mod index;
 mod lifecycle;
 mod shared;
 
 use axum::routing::{get, post};
-use axum::{Json, Router, middleware};
-use serde_json::json;
+use axum::{Router, middleware};
 
 use self::apps::{create_app, delete_app, get_app, list_apps, update_app};
 use self::deployments::{deployment_logs, get_deployment, list_deployments};
+use self::index::{health, index};
 use self::lifecycle::{deploy_app, start_app, stop_app};
 use super::auth::require_token;
 use super::logging::log_requests;
@@ -28,12 +30,14 @@ use crate::state::AppState;
 /**
  * Builds the HTTP router.
  *
- * - `/health` and `/webhooks/github` are open. The webhook is protected by its
- *   own signature check instead.
- * - Everything under `/api` requires the bearer token when one is configured.
+ * - `/`, `/health` and `/api/health` return the health check, with no token.
+ * - `/webhooks/github` is open too. It is protected by its own signature check.
+ * - Everything else under `/api`, including the route list at `/api`, requires
+ *   the bearer token when one is configured.
  */
 pub fn router(state: AppState) -> Router {
-    let api = Router::new()
+    let protected = Router::new()
+        .route("/", get(index))
         .route("/apps", get(list_apps).post(create_app))
         .route(
             "/apps/{app}",
@@ -47,13 +51,18 @@ pub fn router(state: AppState) -> Router {
         .route("/deployments/{id}/logs", get(deployment_logs))
         .layer(middleware::from_fn_with_state(state.clone(), require_token));
 
-Router::new()
-    .route("/health", get(|| async { Json(json!({ "ok": true })) }))
-    .route("/webhooks/github", post(github_webhook))
-    .nest("/api", api)
-    .layer(middleware::from_fn(log_requests))   // new: wraps every route above
-    .with_state(state)
+    // `/api/health` is added after the token layer above, so it is not covered
+    // by it and monitors can reach it without credentials.
+    let api = Router::new().route("/health", get(health)).merge(protected);
 
+    Router::new()
+        .route("/", get(health))
+        .route("/health", get(health))
+        .route("/webhooks/github", post(github_webhook))
+        .nest("/api", api)
+        // Added last so it wraps every route above, including failed requests.
+        .layer(middleware::from_fn(log_requests))
+        .with_state(state)
 }
 
 #[cfg(test)]

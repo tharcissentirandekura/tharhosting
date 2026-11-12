@@ -47,6 +47,10 @@ Apps can be addressed by name or id. With a token set, add
 `-H "Authorization: Bearer $TOKEN"` to every `/api` call.
 
 ```bash
+# Discover the API and check health
+curl localhost:8900/api                            # list of all routes (needs the token)
+curl localhost:8900/api/health                     # {"ok":true}, no token (also / and /health)
+
 # Create and deploy
 curl -XPOST localhost:8900/api/apps -H 'content-type: application/json' -d '{
   "name": "site",
@@ -103,9 +107,3 @@ src/tools      git / docker CLI wrappers
 src/state.rs   shared AppState
 ```
 
-## Not in the MVP yet
-
-No web UI, no docker-compose support, no TLS or domain routing (apps are
-reached at `host:port`), no private-repo credentials, old images aren't
-pruned on redeploy, and builds run one at a time per app but are not
-otherwise limited.
