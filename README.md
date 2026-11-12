@@ -1,14 +1,27 @@
 # tharhosting
 
+[![CI](https://github.com/tharcissentirandekura/tharhosting/actions/workflows/actions.yml/badge.svg?branch=main)](https://github.com/tharcissentirandekura/tharhosting/actions/workflows/actions.yml)
+![Rust 2024 edition](https://img.shields.io/badge/rust-2024_edition-orange?logo=rust)
+
 A small self-hosted PaaS written in Rust. Register a git repo that has a
 `Dockerfile` at its root; tharhosting clones it, runs `docker build`, and
 starts the container on its own host port. Pushes to GitHub can redeploy it
 automatically.
 
+```mermaid
+flowchart LR
+    ci["You or CI<br/>POST /api/apps/{app}/deploy"] --> server
+    gh["GitHub push<br/>POST /webhooks/github"] --> server
+
+    subgraph tharhosting
+        server["API on :8900"] --> clone["git clone"]
+        clone --> build["docker build"]
+        build --> swap["replace container"]
+    end
+
+    swap --> app["th-name container<br/>on port 10000+"]
 ```
- curl / CI ──► tharhosting :8900 ──► git clone ──► docker build ──► th-<app> container :10000+
- GitHub push ──► /webhooks/github ──┘
-```
+
 
 ## Run it
 
@@ -96,14 +109,5 @@ Point a repo webhook at `http(s)://<host>/webhooks/github`, content type
 A push redeploys every app whose `repo_url` (https, ssh, and `.git` forms all
 match) and `branch` match the push.
 
-## Layout
 
-```
-src/api        routes, webhook, auth, errors, payloads, validation (axum)
-src/config.rs  Config (env vars)
-src/db         model + JSON-file store
-src/deploy     clone → build → run pipeline
-src/tools      git / docker CLI wrappers
-src/state.rs   shared AppState
-```
-
+More to come.
