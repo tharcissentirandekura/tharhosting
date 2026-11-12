@@ -18,7 +18,8 @@ You need Rust, git, and a running Docker daemon.
 THARHOSTING_TOKEN=change-me cargo run --release
 ```
 
-Everything it writes goes in `~/.tharhosting/` (`db.json`, `builds/`, `logs/`).
+Everything it writes goes in `data/` next to where you start it, i.e. the
+project folder (`data/db.json`, `data/builds/`, `data/logs/`). It is git-ignored.
 
 ### Configuration
 
@@ -26,7 +27,7 @@ Everything it writes goes in `~/.tharhosting/` (`db.json`, `builds/`, `logs/`).
 |---|---|---|
 | `THARHOSTING_HOST` | `127.0.0.1` | Address the API binds to |
 | `THARHOSTING_PORT` | `8900` | API port |
-| `THARHOSTING_DATA` | `~/.tharhosting` | Data directory |
+| `THARHOSTING_DATA` | `data` (relative to the working directory) | Data directory |
 | `THARHOSTING_TOKEN` | unset | If set, `/api/*` requires `Authorization: Bearer <token>` |
 | `THARHOSTING_WEBHOOK_SECRET` | unset | If set, GitHub webhooks must be signed with it |
 | `THARHOSTING_APP_PORT_START` | `10000` | First host port given to apps |
@@ -36,7 +37,8 @@ Everything it writes goes in `~/.tharhosting/` (`db.json`, `builds/`, `logs/`).
 
 ## Your app's contract
 
-- A `Dockerfile` at the repo root.
+- A Dockerfile in the repo. By default `Dockerfile` at the root; set
+  `dockerfile` (e.g. `docker/Dockerfile.prod`) to use another path.
 - Listen on `$PORT` (set to `container_port`, default `8080`).
 
 ## API
@@ -50,6 +52,7 @@ curl -XPOST localhost:8900/api/apps -H 'content-type: application/json' -d '{
   "name": "site",
   "repo_url": "https://github.com/you/site.git",
   "branch": "main",
+  "dockerfile": "Dockerfile",
   "container_port": 8080,
   "env": {"GREETING": "hi"},
   "deploy": true
@@ -71,7 +74,7 @@ curl localhost:8900/api/deployments/<id>/logs      # text; ?offset=N to tail
 The logs endpoint returns `x-log-offset` (pass it back as `?offset=`) and
 `x-deploy-done: true|false` so a client can poll until the build finishes.
 
-PATCH changes (branch, env, port, repo) take effect on the next deploy.
+PATCH changes (branch, dockerfile, env, port, repo) take effect on the next deploy.
 
 ### Deploy behaviour
 
@@ -92,13 +95,12 @@ match) and `branch` match the push.
 ## Layout
 
 ```
-src/api        routes + webhook handler (axum)
-src/http       error type, auth middleware
-src/requests   request bodies + validation
+src/api        routes, webhook, auth, errors, payloads, validation (axum)
+src/config.rs  Config (env vars)
 src/db         model + JSON-file store
 src/deploy     clone → build → run pipeline
-src/sdk        git / docker CLI wrappers
-src/types.rs   Config, shared AppState
+src/tools      git / docker CLI wrappers
+src/state.rs   shared AppState
 ```
 
 ## Not in the MVP yet

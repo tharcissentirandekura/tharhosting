@@ -1,8 +1,26 @@
-use tharhosting::db::store::Store;
-use tharhosting::types::{AppState, Config};
+/*!
+ * tharhosting server entry point.
+ *
+ * Loads `.env` (if present), reads configuration, prepares the data
+ * directories, opens the database, recovers deployments interrupted by a
+ * previous run, and then serves the API until Ctrl-C.
+ */
 
+use tharhosting::config::Config;
+use tharhosting::db::store::Store;
+use tharhosting::state::AppState;
+
+/**
+ * Starts the server. Exits with a non-zero code on any startup error: 2 for
+ * invalid configuration, 1 for anything else.
+ */
 #[tokio::main]
 async fn main() {
+    // Load `.env` if it exists. Variables already set in the real environment
+    // win, and a missing file is fine. This runs first so `RUST_LOG` can be set
+    // in the file too.
+    dotenvy::dotenv().ok();
+
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     let config = match Config::from_env() {
@@ -42,10 +60,12 @@ async fn main() {
 
     let addr = format!("{}:{}", config.host, config.port);
     log::info!("data dir: {}", config.data_dir.display());
+    
+    // Build the api router.
     let app = tharhosting::api::router(AppState::new(config, store));
-
-    let listener = match tokio::net::TcpListener::bind(&addr).await {
-        Ok(l) => l,
+    let address_binding = tokio::net::TcpListener::bind(&addr).await;
+    let listener = match address_binding {
+        Ok(tcp) => tcp,
         Err(e) => {
             log::error!("cannot bind {addr}: {e}");
             std::process::exit(1);

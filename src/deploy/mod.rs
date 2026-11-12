@@ -1,4 +1,6 @@
-//! The deploy pipeline: clone → docker build → swap container.
+/*!
+ * The deploy pipeline: clone → docker build → swap container.
+ */
 
 use std::path::Path;
 
@@ -6,12 +8,24 @@ use chrono::Utc;
 use uuid::Uuid;
 
 use crate::db::model::{AppStatus, Deployment, DeploymentStatus, Trigger};
-use crate::http::AppError;
-use crate::sdk::{docker, git, log_line};
-use crate::types::AppState;
+use crate::api::error::AppError;
+use crate::tools::process::log_line;
+use crate::tools::{docker, git};
+use crate::state::AppState;
 
-/// Record a new deployment and run it in the background.
-/// Fails with 409 if the app already has a deploy in flight.
+/**
+ * Records a new deployment for `app_id` and runs it in the background.
+ *
+ * The app is marked `Deploying` straight away and the deployment is returned
+ * without waiting for the build. The `inflight` set guarantees that only one
+ * deploy per app runs at a time.
+ *
+ * # Errors
+ *
+ * - [`AppError::Conflict`] if the app already has a deploy in flight.
+ * - [`AppError::NotFound`] if the app doesn't exist.
+ * - [`AppError::Internal`] if the new state can't be saved.
+ */
 pub fn start(state: &AppState, app_id: Uuid, trigger: Trigger) -> Result<Deployment, AppError> {
     if !state.inflight.lock().unwrap().insert(app_id) {
         return Err(AppError::Conflict(
@@ -49,22 +63,42 @@ pub fn start(state: &AppState, app_id: Uuid, trigger: Trigger) -> Result<Deploym
     Ok(dep)
 }
 
+/**
+ * Why a deploy failed, and how far it got.
+ *
+ * `replaced` decides the app's status afterwards: if the old container was
+ * never touched, the previous version is still serving.
+ */
 struct Failure {
     msg: String,
-    /// Whether the old container had already been torn down.
+    /** Whether the old container had already been torn down. */
     replaced: bool,
 }
 
+/**
+ * Lets pipeline steps use `?` on plain `String` errors. Such errors happen
+ * before the old container is touched, so `replaced` is `false`.
+ */
 impl From<String> for Failure {
     fn from(msg: String) -> Self {
         Failure { msg, replaced: false }
     }
 }
 
+/**
+ * Returns the path of the log file for deployment `dep_id`.
+ */
 pub fn log_path(state: &AppState, dep_id: Uuid) -> std::path::PathBuf {
     state.config.logs_dir().join(format!("{dep_id}.log"))
 }
 
+/**
+ * Runs the pipeline for one deployment, then records the outcome.
+ *
+ * On success the deployment is `Succeeded` and the app `Running`. On failure
+ * the deployment is `Failed`, and the app returns to its `prev` status if the
+ * running container was never replaced.
+ */
 async fn run(state: &AppState, app_id: Uuid, dep_id: Uuid, prev: AppStatus) {
     let log = log_path(state, dep_id);
     let _ = std::fs::create_dir_all(state.config.logs_dir());
@@ -115,6 +149,16 @@ async fn run(state: &AppState, app_id: Uuid, dep_id: Uuid, prev: AppStatus) {
     }
 }
 
+/**
+ * The deploy steps: clone the repo, check for a Dockerfile, build the image,
+ * and replace the running container. Progress goes to the `log` file.
+ *
+ * Returns the built commit SHA (if it could be read) and the image tag.
+ *
+ * # Errors
+ *
+ * Returns a [`Failure`] describing the first step that failed.
+ */
 async fn pipeline(
     state: &AppState,
     app_id: Uuid,
@@ -156,12 +200,20 @@ async fn pipeline(
 
     git::clone(&cfg.git_bin, &app.repo_url, &app.branch, &src, log).await?;
     let commit = git::head_commit(&cfg.git_bin, &src).await.ok();
+    
     if let Some(c) = &commit {
         log_line(log, &format!("==> commit {c}"));
     }
 
-    if !src.join("Dockerfile").exists() {
-        return Err("no Dockerfile at the repository root".to_string().into());
+    // The Dockerfile must be a real file that still resolves inside the checkout,
+    // so a symlink in the repo can't point the build at files elsewhere.
+    let dockerfile = src.join(&app.dockerfile);
+    let inside_repo = match (dockerfile.canonicalize(), src.canonicalize()) {
+        (Ok(file), Ok(root)) => file.is_file() && file.starts_with(root),
+        _ => false,
+    };
+    if !inside_repo {
+        return Err(format!("no {} in the repository", app.dockerfile).into());
     }
 
     let tag = &dep_id.simple().to_string()[..12];

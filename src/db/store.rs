@@ -1,17 +1,36 @@
+/*!
+ * A small JSON-file database: the whole dataset is kept in memory and saved to
+ * disk on every change.
+ */
+
 use std::io;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
 use super::model::Data;
 
-/// A tiny JSON-file database. The whole dataset lives in memory behind a
-/// mutex and is rewritten atomically (tmp file + rename) on every change.
+/**
+ * A tiny JSON-file database. The whole dataset lives in memory behind a
+ * mutex and is rewritten atomically (tmp file + rename) on every change.
+ *
+ * Writing to a temporary file and renaming it means a crash mid-write can never
+ * leave a half-written `db.json`.
+ */
 pub struct Store {
     path: PathBuf,
     data: Mutex<Data>,
 }
 
 impl Store {
+    /**
+     * Opens the store at `path`, creating the parent directory if needed.
+     * An existing file is loaded. Otherwise the store starts empty.
+     *
+     * # Errors
+     *
+     * Returns an error if the directory can't be created, the file can't be
+     * read, or its contents are not valid JSON.
+     */
     pub fn open(path: PathBuf) -> io::Result<Self> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -29,11 +48,25 @@ impl Store {
         })
     }
 
+    /**
+     * Runs `f` with read access to the data and returns its result.
+     *
+     * The lock is held while `f` runs, so keep it short and don't call back
+     * into the store from inside it.
+     */
     pub fn read<R>(&self, f: impl FnOnce(&Data) -> R) -> R {
         f(&self.data.lock().unwrap())
     }
 
-    /// Mutate the data and persist it before releasing the lock.
+    /**
+     * Runs `f` with write access to the data, then saves the result to disk
+     * before releasing the lock. Returns whatever `f` returned.
+     *
+     * # Errors
+     *
+     * Returns an error if saving to disk fails. The in-memory change has
+     * already been applied by then.
+     */
     pub fn write<R>(&self, f: impl FnOnce(&mut Data) -> R) -> io::Result<R> {
         let mut guard = self.data.lock().unwrap();
         let out = f(&mut guard);
@@ -41,6 +74,10 @@ impl Store {
         Ok(out)
     }
 
+    /**
+     * Saves `data` to disk atomically: write a `.json.tmp` file, then rename it
+     * over the real one.
+     */
     fn persist(&self, data: &Data) -> io::Result<()> {
         let tmp = self.path.with_extension("json.tmp");
         let raw = serde_json::to_vec_pretty(data).map_err(io::Error::other)?;
@@ -62,6 +99,7 @@ mod tests {
             name: name.into(),
             repo_url: "https://github.com/x/y".into(),
             branch: "main".into(),
+            dockerfile: "Dockerfile".into(),
             container_port: 8080,
             host_port: port,
             env: Default::default(),
