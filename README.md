@@ -3,111 +3,142 @@
 [![CI](https://github.com/tharcissentirandekura/tharhosting/actions/workflows/actions.yml/badge.svg?branch=main)](https://github.com/tharcissentirandekura/tharhosting/actions/workflows/actions.yml)
 ![Rust 2024 edition](https://img.shields.io/badge/rust-2024_edition-orange?logo=rust)
 
-A small self-hosted PaaS written in Rust. Register a git repo that has a
-`Dockerfile` at its root; tharhosting clones it, runs `docker build`, and
-starts the container on its own host port. Pushes to GitHub can redeploy it
-automatically.
+A lightweight, self-hosted PaaS (Platform-as-a-Service) written in Rust. Register a git repository that has a `Dockerfile` at its root; **tharhosting** will shallow-clone it, build the Docker image, replace the existing container without downtime, and serve it on its own host port. Connect GitHub webhooks to automate redeployment on every push.
 
-```mermaid
-flowchart LR
-    ci["You or CI<br/>POST /api/apps/{app}/deploy"] --> server
-    gh["GitHub push<br/>POST /webhooks/github"] --> server
+---
 
-    subgraph tharhosting
-        server["API on :8900"] --> clone["git clone"]
-        clone --> build["docker build"]
-        build --> swap["replace container"]
-    end
+## Architecture Flow
 
-    swap --> app["th-name container<br/>on port 10000+"]
-```
+Below is the high-level system design of the tharhosting pipeline, capturing how deploy commands trigger secure builds and expose them publicly:
 
+<p align="center">
+  <img src="image-2.png" alt="tharhosting architecture flowchart depicting a pipeline starting from an API call or GitHub push, processing through cloning, Docker building, and replacing a container on its own host port while being publicly exposed by Caddy and ngrok" width="840">
+</p>
 
-## Run it
+---
 
-You need Rust, git, and a running Docker daemon.
+## Quick Start
+
+You need **Rust**, **git**, and a **running Docker daemon** on your host.
 
 ```bash
 THARHOSTING_TOKEN=change-me cargo run --release
 ```
 
-Everything it writes goes in `data/` next to where you start it, i.e. the
-project folder (`data/db.json`, `data/builds/`, `data/logs/`). It is git-ignored.
+All application state is kept locally in a `data/` directory at the root of the project (`data/db.json`, `data/builds/`, `data/logs/`). This directory is git-ignored and self-contained.
 
-### Configuration
+### Environment Configuration
+
+Customize your instance by setting the following environment variables:
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `THARHOSTING_HOST` | `127.0.0.1` | Address the API binds to |
-| `THARHOSTING_PORT` | `8900` | API port |
-| `THARHOSTING_DATA` | `data` (relative to the working directory) | Data directory |
-| `THARHOSTING_TOKEN` | unset | If set, `/api/*` requires `Authorization: Bearer <token>` |
-| `THARHOSTING_WEBHOOK_SECRET` | unset | If set, GitHub webhooks must be signed with it |
-| `THARHOSTING_APP_PORT_START` | `10000` | First host port given to apps |
-| `THARHOSTING_APP_BIND` | `0.0.0.0` | Interface app ports are published on |
-| `THARHOSTING_PUBLIC_HOST` | `localhost` | Hostname used in app URLs |
-| `THARHOSTING_DOCKER` / `THARHOSTING_GIT` | `docker` / `git` | Binaries to call |
+| `THARHOSTING_HOST` | `127.0.0.1` | The network interface the API binds to |
+| `THARHOSTING_PORT` | `8900` | The port the API listens on |
+| `THARHOSTING_DATA` | `data` | Directory where database, build directories, and logs are stored |
+| `THARHOSTING_TOKEN` | *unset* | If set, all `/api/*` requests require `Authorization: Bearer <token>` |
+| `THARHOSTING_WEBHOOK_SECRET` | *unset* | If set, incoming GitHub webhooks must be cryptographically signed with it |
+| `THARHOSTING_APP_PORT_START` | `10000` | The first port given to host-bound user containers |
+| `THARHOSTING_APP_BIND` | `0.0.0.0` | The host interface where app container ports are published |
+| `THARHOSTING_PUBLIC_HOST` | `localhost` | The hostname used when generating public app URLs |
+| `THARHOSTING_DOCKER` | `docker` | Path to the Docker CLI binary |
+| `THARHOSTING_GIT` | `git` | Path to the Git binary |
 
-## Your app's contract
+---
 
-- A Dockerfile in the repo. By default `Dockerfile` at the root; set
-  `dockerfile` (e.g. `docker/Dockerfile.prod`) to use another path.
-- Listen on `$PORT` (set to `container_port`, default `8080`).
+## The App Contract
 
-## API
+To run your app on tharhosting, your repository must fulfill this simple contract:
 
-Apps can be addressed by name or id. With a token set, add
-`-H "Authorization: Bearer $TOKEN"` to every `/api` call.
+1. **Dockerfile**: Include a `Dockerfile` at your repo's root. To use an alternative path (e.g., `docker/Dockerfile.prod`), set the `dockerfile` field in your app config.
+2. **Dynamic Port Binding**: Ensure your application listens on the `$PORT` environment variable (the internal container port defaults to `8080` unless specified otherwise in `container_port`).
 
+---
+
+## API Documentation
+
+Apps can be managed and deployed via the HTTP API using either their user-defined `name` or UUID `id`. 
+*If a `THARHOSTING_TOKEN` is configured, be sure to pass `-H "Authorization: Bearer $TOKEN"` with your `/api` calls.*
+
+### 1. Discovery & Diagnostics
 ```bash
-# Discover the API and check health
-curl localhost:8900/api                            # list of all routes (needs the token)
-curl localhost:8900/api/health                     # {"ok":true}, no token (also / and /health)
+# Check API health (No auth required)
+curl localhost:8900/api/health                     # Returns {"ok":true} (also matches / and /health)
 
-# Create and deploy
-curl -XPOST localhost:8900/api/apps -H 'content-type: application/json' -d '{
-  "name": "site",
-  "repo_url": "https://github.com/you/site.git",
-  "branch": "main",
-  "dockerfile": "Dockerfile",
-  "container_port": 8080,
-  "env": {"GREETING": "hi"},
-  "deploy": true
-}'
-
-curl localhost:8900/api/apps                       # list
-curl localhost:8900/api/apps/site                  # details + live container state + url
-curl -XPATCH localhost:8900/api/apps/site -d '{"branch":"prod"}' -H 'content-type: application/json'
-curl -XPOST localhost:8900/api/apps/site/deploy    # redeploy (409 if one is running)
-curl -XPOST localhost:8900/api/apps/site/stop
-curl -XPOST localhost:8900/api/apps/site/start
-curl -XDELETE localhost:8900/api/apps/site         # removes container, images, logs
-
-curl localhost:8900/api/apps/site/deployments      # newest first
-curl localhost:8900/api/deployments/<id>
-curl localhost:8900/api/deployments/<id>/logs      # text; ?offset=N to tail
+# List all available routes (Authentication required)
+curl localhost:8900/api
 ```
 
-The logs endpoint returns `x-log-offset` (pass it back as `?offset=`) and
-`x-deploy-done: true|false` so a client can poll until the build finishes.
+### 2. Application Life Cycle
+```bash
+# Create and deploy a new app
+curl -X POST localhost:8900/api/apps \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "site",
+    "repo_url": "[https://github.com/you/site.git](https://github.com/you/site.git)",
+    "branch": "main",
+    "dockerfile": "Dockerfile",
+    "container_port": 8080,
+    "env": {"GREETING": "hi"},
+    "deploy": true
+  }'
 
-PATCH changes (branch, dockerfile, env, port, repo) take effect on the next deploy.
+# View all apps
+curl localhost:8900/api/apps
 
-### Deploy behaviour
+# Get specific app details (includes state and endpoint)
+curl localhost:8900/api/apps/site
 
-1. Shallow-clone the branch into `builds/<app-id>`.
-2. `docker build -t tharhosting/<name>:<deploy-id>`.
-3. Only if the build succeeds: replace container `th-<name>` (`--restart unless-stopped`).
+# Edit an app's config (changes apply on next deploy)
+curl -X PATCH localhost:8900/api/apps/site \
+  -H 'Content-Type: application/json' \
+  -d '{"branch":"prod"}'
 
-If the clone or build fails, the version already running stays up. If the
-server restarts mid-deploy, that deploy is marked failed on startup.
+# Force a manual redeploy (409 Conflict if a deploy is already running)
+curl -X POST localhost:8900/api/apps/site/deploy
 
-### GitHub webhook
+# Stop/Start
+curl -X POST localhost:8900/api/apps/site/stop
+curl -X POST localhost:8900/api/apps/site/start
 
-Point a repo webhook at `http(s)://<host>/webhooks/github`, content type
-`application/json`, with the same secret as `THARHOSTING_WEBHOOK_SECRET`.
-A push redeploys every app whose `repo_url` (https, ssh, and `.git` forms all
-match) and `branch` match the push.
+# Destroy (completely removes container, build directory, image, & logs)
+curl -X DELETE localhost:8900/api/apps/site
+```
 
+### 3. Deployments & Live Logs
+```bash
+# Get deployment history (newest first)
+curl localhost:8900/api/apps/site/deployments
 
-More to come.
+# View deployment info by ID
+curl localhost:8900/api/deployments/<id>
+
+# Fetch / tail build and run logs (returns plain text)
+curl localhost:8900/api/deployments/<id>/logs
+```
+
+> **Log Streaming Tip**: The logs endpoint responds with `X-Log-Offset` (use this in `?offset=N` to tail new output) and `X-Deploy-Done: true|false` to easily poll progress until the build is complete.
+
+---
+
+## Behind the Scenes: Deploy Behavior
+
+When a deployment is triggered (either manually or via webhook):
+1. **Isolated Build**: The git repository is shallow-cloned into `data/builds/<app-id>`.
+2. **Docker Compilation**: It triggers `docker build -t tharhosting/<name>:<deploy-id>`.
+3. **No-Downtime Swap**: Only if compilation succeeds is the existing `th-<name>` container stopped and immediately replaced.
+   * `Restart Policy`: All app containers run with `--restart unless-stopped`.
+   * `Graceful Failover`: If cloning or building fails, **the previous container remains running and unaffected.** Any crash/reboot during deployment registers the run as Failed on startup.
+
+### GitHub Webhook Integration
+
+Expose your server endpoint `http(s)://<your-host>/webhooks/github` and point your GitHub Repository Webhook here. 
+- **Content Type**: `application/json`
+- **Security**: Must match your local `THARHOSTING_WEBHOOK_SECRET` key if one is defined.
+
+On push event, every registered app matching both the incoming repo (all standard SSH/HTTPS formats supported) and active target branch triggers a parallel, hands-free redeployment.
+
+---
+
+More features to come! Feel free to raise issues or pull requests. I am using this to learn different topics, so it is open to everyone to try.
