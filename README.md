@@ -6,7 +6,7 @@
 A lightweight, self-hosted PaaS (Platform-as-a-Service) written in Rust. Register a git repository that has a `Dockerfile` at its root; **tharhosting** will shallow-clone it, build the Docker image, replace the existing container without downtime, and serve it on its own host port. Connect GitHub webhooks to automate redeployment on every push.
 
 ---
-View tasks you can contribute too.
+View tasks you can contribute to.
 https://github.com/users/tharcissentirandekura/projects/11/views/3
 
 > [!NOTE]
