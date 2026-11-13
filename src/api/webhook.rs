@@ -72,7 +72,7 @@ pub async fn github_webhook(
         "push" => {}
         other => return Ok(Json(json!({ "ok": true, "ignored": other }))),
     }
-
+    // deserialize the github webhook response body
     let push: GithubPush = serde_json::from_slice(&body)
         .map_err(|e| AppError::BadRequest(format!("bad push payload: {e}")))?;
 
