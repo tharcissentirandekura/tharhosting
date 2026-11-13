@@ -7,6 +7,9 @@ use axum::extract::Request;
 use axum::middleware::Next;
 use axum::response::Response;
 
+/**
+ * A middleware for each request received to log the request message
+ */
 pub async fn log_requests(req: Request, next: Next) -> Response {
     let method = req.method().clone();
     let path = req.uri().path().to_owned();
