@@ -57,7 +57,7 @@ Customize your instance by setting the following environment variables:
 To run your app on tharhosting, your repository must fulfill this simple contract:
 
 1. **Dockerfile**: Include a `Dockerfile` at your repo's root. To use an alternative path (e.g., `docker/Dockerfile.prod`), set the `dockerfile` field in your app config.
-2. **Dynamic Port Binding**: Ensure your application listens on the `$PORT` environment variable (the internal container port defaults to `8901` unless specified otherwise in `container_port`).
+2. **Dynamic Port Binding**: Ensure your application listens on the `$PORT` environment variable (the internal container port defaults to `8080` unless specified otherwise in `container_port`).
 
 ---
 
