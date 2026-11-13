@@ -31,7 +31,8 @@ THARHOSTING_TOKEN=change-me cargo run --release
 ```
 
 All application state is kept locally in a `data/` directory at the root of the project (`data/db.json`, `data/builds/`, `data/logs/`). This directory is git-ignored and self-contained. 
-> [!TIP] You can generate a token of random bytes in hexadecimal using `openssl rand -hex 32` and use that as the token env variable value.
+> [!TIP]
+> You can generate a token of random bytes in hexadecimal using `openssl rand -hex 32` and use that as the token env variable value.
 
 ### Environment Configuration
 
