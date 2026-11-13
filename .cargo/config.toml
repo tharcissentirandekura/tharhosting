@@ -1,0 +1,4 @@
+[alias]
+dev = "run"
+rel = "build --release"
+lint = "clippy -- -D warnings"
