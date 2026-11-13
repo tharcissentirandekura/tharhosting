@@ -6,10 +6,15 @@
 A lightweight, self-hosted PaaS (Platform-as-a-Service) written in Rust. Register a git repository that has a `Dockerfile` at its root; **tharhosting** will shallow-clone it, build the Docker image, replace the existing container without downtime, and serve it on its own host port. Connect GitHub webhooks to automate redeployment on every push.
 
 ---
+View tasks you can contribute to.
+https://github.com/users/tharcissentirandekura/projects/11/views/3
+
+> [!NOTE]
+While this is going to be a fully functional lightweight platform, I am focused more on the backend components which I think is the core parts of this service. So, if you love frontend and want to contribute that part, please do so. For now, I haven't added guides and information regarding what I will be using to build the frontend component of this service but I am leaning toward React with typescript since I have experience building products and tools in this framework. But, I also have strong interest for Rust language given its use and speed in low level or critical applications. Of course, this project won't need to use Rust for frontend and may be backend too but I have been using Rust in my classes and this project serves as a great place to play around those tools and get comfortable. why not! YOU SHOULD DO.
 
 ## Architecture Flow
 
-Below is the high-level system design of the tharhosting pipeline, capturing how deploy commands trigger secure builds and expose them publicly:
+For my design doc and design system, I have the high-level system design of the tharhosting pipeline, capturing how deploy commands trigger secure builds and expose them publicly. There should be more but I hope this gives you an idea of how the platform operates or at least is going to. So, if you are interested in this project, feel free to let me know and we can even chat about it. I LOVE TALKING ABOUT MY PROJECT (but only if you are interested)
 
 <p align="center">
   <img src="image-2.png" alt="tharhosting architecture flowchart depicting a pipeline starting from an API call or GitHub push, processing through cloning, Docker building, and replacing a container on its own host port while being publicly exposed by Caddy and ngrok" width="840">
@@ -17,7 +22,7 @@ Below is the high-level system design of the tharhosting pipeline, capturing how
 
 ---
 
-## Quick Start
+## To get started, here is a guide of the system
 
 You need **Rust**, **git**, and a **running Docker daemon** on your host.
 
@@ -25,7 +30,9 @@ You need **Rust**, **git**, and a **running Docker daemon** on your host.
 THARHOSTING_TOKEN=change-me cargo run --release
 ```
 
-All application state is kept locally in a `data/` directory at the root of the project (`data/db.json`, `data/builds/`, `data/logs/`). This directory is git-ignored and self-contained.
+All application state is kept locally in a `data/` directory at the root of the project (`data/db.json`, `data/builds/`, `data/logs/`). This directory is git-ignored and self-contained. 
+> [!TIP]
+> You can generate a token of random bytes in hexadecimal using `openssl rand -hex 32` and use that as the token env variable value.
 
 ### Environment Configuration
 
