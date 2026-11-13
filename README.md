@@ -14,7 +14,7 @@ While this is going to be a fully functional lightweight platform, I am focused 
 
 ## Architecture Flow
 
-For my design doc and design system, I have a the high-level system design of the tharhosting pipeline, capturing how deploy commands trigger secure builds and expose them publicly. There should be more but I hope this gives you an idea of how the platform operates or at least is going to. So, if you are interested in this project, feel free to let me know and we can even chat about it. I LOVE TALKING ABOUT MY PROJECT (but only if you are interested)
+For my design doc and design system, I have the high-level system design of the tharhosting pipeline, capturing how deploy commands trigger secure builds and expose them publicly. There should be more but I hope this gives you an idea of how the platform operates or at least is going to. So, if you are interested in this project, feel free to let me know and we can even chat about it. I LOVE TALKING ABOUT MY PROJECT (but only if you are interested)
 
 <p align="center">
   <img src="image-2.png" alt="tharhosting architecture flowchart depicting a pipeline starting from an API call or GitHub push, processing through cloning, Docker building, and replacing a container on its own host port while being publicly exposed by Caddy and ngrok" width="840">
